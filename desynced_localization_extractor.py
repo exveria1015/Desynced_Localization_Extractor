@@ -1,4 +1,3 @@
-
 import os
 import re
 import json
@@ -6,31 +5,48 @@ import zipfile
 import argparse
 from io import TextIOWrapper
 
+def clean_string(s):
+    s = re.sub(r'<[^>]+>', '', s)
+    s = re.sub(r'%[scdfu]', '', s)
+    s = re.sub(r'\w+\.\w+\.\w+', '', s)
+    s = re.sub(r'<img id=|"/>|>|">', '', s)
+    return s.strip()
+
+
+def is_valid_string(s):
+    cleaned = clean_string(s)
+    return cleaned and not cleaned.isdigit() and not all(c in '{}[]().,;:!?' for c in cleaned) and len(cleaned) > 1
+
 def extract_strings_from_content(content):
     strings = set()
-    
-    # Extract strings from L function
+
     l_func_matches = re.findall(r'L\((.*?)\)', content, re.DOTALL)
     for match in l_func_matches:
-        strings.update(re.findall(r'"([^"]*)"', match))
+        for s in re.findall(r'"([^"]*)"', match):
+            if is_valid_string(s):
+                strings.add(clean_string(s))
     
-    # Extract specific attribute strings from UI.AddLayout
     ui_layout_matches = re.findall(r'UI\.AddLayout\((.*?)\)', content, re.DOTALL)
     for match in ui_layout_matches:
-        strings.update(re.findall(r'(ok_text|cancel_text)=\'([^\']*)\'', match))
+        for _, s in re.findall(r'(ok_text|cancel_text)=\'([^\']*)\'', match):
+            if is_valid_string(s):
+                strings.add(clean_string(s))
     
-    # Extract strings related to specific keys in table definitions
     table_matches = re.findall(r'\{([^}]*)\}', content, re.DOTALL)
     for match in table_matches:
-        strings.update(re.findall(r'(name|text|label|desc|category)\s*=\s*"([^"]*)"', match))
+        for _, s in re.findall(r'(name|text|label|desc|category)\s*=\s*"([^"]*)"', match):
+            if is_valid_string(s):
+                strings.add(clean_string(s))
     
-    # Extract strings consisting of words starting with capital letters and separated by spaces
-    strings.update(re.findall(r'"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)"', content))
+    for s in re.findall(r'"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)"', content):
+        if is_valid_string(s):
+            strings.add(clean_string(s))
     
-    # Extract strings from args array
     args_matches = re.findall(r'args\s*=\s*\{([^}]*)\}', content, re.DOTALL)
     for match in args_matches:
-        strings.update(re.findall(r'"([^"]*)"', match))
+        for s in re.findall(r'"([^"]*)"', match):
+            if is_valid_string(s):
+                strings.add(clean_string(s))
     
     return strings
 
@@ -60,10 +76,10 @@ def extract_strings_from_zip(zip_path):
 def load_jsonc(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
-    # Remove comments for JSON
-    content = re.sub(r'//.*$', '', content, flags=re.MULTILINE)
+    # Remove comments
+    content = re.sub(r'//.*?$', '', content, flags=re.MULTILINE)
     content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
-    # Remove trailing commas
+    # Handle trailing commas
     content = re.sub(r',\s*}', '}', content)
     content = re.sub(r',\s*]', ']', content)
     # Parse JSON
@@ -116,7 +132,6 @@ def main():
     write_jsonc(all_strings, output_file, base_lang_entries)
 
     print(f"Translation file created: {output_file}")
-
 
 if __name__ == "__main__":
     main()
